@@ -4,7 +4,6 @@ import com.ktb.community.dto.ApiResponseDto;
 import com.ktb.community.llm.dto.UserLlmChatResponseDto;
 import com.ktb.community.llm.service.LlmService;
 import lombok.RequiredArgsConstructor;
-import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -20,7 +19,7 @@ public class LlmController {
 
     @PostMapping("/llm")
     public Mono<ApiResponseDto<UserLlmChatResponseDto>> getChat(@RequestParam("roomId") Long roomId,
-                                                                @AuthenticationPrincipal(expression = "userId") Long userId) {
+                                                                @RequestParam("userId") Long userId) {
         return llmService.getChat(roomId, userId)
                 .map(ApiResponseDto::success);
     }
