@@ -4,49 +4,51 @@ import com.ktb.community.chat.service.RedisPubSubService;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.data.redis.connection.ReactiveRedisConnectionFactory;
-import org.springframework.data.redis.core.ReactiveRedisTemplate;
-import org.springframework.data.redis.core.ReactiveStringRedisTemplate;
+import org.springframework.data.redis.connection.Message;
+import org.springframework.data.redis.connection.RedisConnectionFactory;
+import org.springframework.data.redis.core.RedisTemplate;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.listener.ChannelTopic;
-import org.springframework.data.redis.listener.ReactiveRedisMessageListenerContainer;
+import org.springframework.data.redis.listener.RedisMessageListenerContainer;
 import org.springframework.data.redis.serializer.Jackson2JsonRedisSerializer;
-import org.springframework.data.redis.serializer.RedisSerializationContext;
 import org.springframework.data.redis.serializer.StringRedisSerializer;
+
+import java.nio.charset.StandardCharsets;
 
 @Configuration
 public class RedisConfig {
 
     @Bean
-    public ReactiveRedisTemplate<String, Object> reactiveRedisTemplate(ReactiveRedisConnectionFactory connectionFactory) {
+    public RedisTemplate<String, Object> redisTemplate(RedisConnectionFactory connectionFactory) {
         Jackson2JsonRedisSerializer<Object> jsonSerializer = new Jackson2JsonRedisSerializer<>(Object.class);
 
-        RedisSerializationContext<String, Object> context = RedisSerializationContext
-                .<String, Object>newSerializationContext(new StringRedisSerializer())
-                .value(jsonSerializer)
-                .hashKey(new StringRedisSerializer())
-                .hashValue(jsonSerializer)
-                .build();
-
-        return new ReactiveRedisTemplate<>(connectionFactory, context);
+        RedisTemplate<String, Object> redisTemplate = new RedisTemplate<>();
+        redisTemplate.setConnectionFactory(connectionFactory);
+        redisTemplate.setKeySerializer(new StringRedisSerializer());
+        redisTemplate.setValueSerializer(jsonSerializer);
+        redisTemplate.setHashKeySerializer(new StringRedisSerializer());
+        redisTemplate.setHashValueSerializer(jsonSerializer);
+        return redisTemplate;
     }
 
-    // chat publish 객체
     @Bean
     @Qualifier("chatPubSub")
-    public ReactiveStringRedisTemplate reactiveStringRedisTemplate(ReactiveRedisConnectionFactory redisConnectionFactory){
-        return new ReactiveStringRedisTemplate(redisConnectionFactory);
+    public StringRedisTemplate stringRedisTemplate(RedisConnectionFactory connectionFactory) {
+        return new StringRedisTemplate(connectionFactory);
     }
 
-    // subscribe 객체
     @Bean
-    public ReactiveRedisMessageListenerContainer reactiveRedisMessageListenerContainer(
-            ReactiveRedisConnectionFactory redisConnectionFactory,
+    public RedisMessageListenerContainer redisMessageListenerContainer(
+            RedisConnectionFactory connectionFactory,
             RedisPubSubService redisPubSubService
     ) {
-        ReactiveRedisMessageListenerContainer container = new ReactiveRedisMessageListenerContainer(redisConnectionFactory);
-        container.receive(ChannelTopic.of("chat"))
-                .flatMap(message -> redisPubSubService.handleMessage(message.getMessage()))
-                .subscribe();
+        RedisMessageListenerContainer container = new RedisMessageListenerContainer();
+        container.setConnectionFactory(connectionFactory);
+        container.addMessageListener(
+                (Message message, byte[] pattern) ->
+                        redisPubSubService.handleMessage(new String(message.getBody(), StandardCharsets.UTF_8)),
+                new ChannelTopic("chat")
+        );
         return container;
     }
 }

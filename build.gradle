@@ -27,6 +27,7 @@ repositories {
 dependencies {
     // spring security
 	implementation 'org.springframework.boot:spring-boot-starter-security'
+	implementation 'org.springframework.boot:spring-boot-starter-web'
 
     // jwt 토큰 관련
 	implementation 'io.jsonwebtoken:jjwt-api:0.12.3'
@@ -37,17 +38,19 @@ dependencies {
     implementation 'org.flywaydb:flyway-core:10.17.0'
     implementation 'org.flywaydb:flyway-mysql:10.17.0'
 
+    // WebClient/Mono 기반 비즈니스 코드는 유지하되, 서버 런타임은 MVC/Tomcat을 사용한다.
+    implementation 'org.springframework:spring-webflux'
 
-    // websocket 관련 의존성 (WebFlux 환경에서는 starter-websocket이 WebMVC를 끌어오므로 모듈만 직접 추가)
+    // websocket 관련 의존성
     implementation 'org.springframework:spring-websocket'
     implementation 'org.springframework:spring-messaging'
 
 	implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
 	implementation 'org.springframework.boot:spring-boot-starter-data-redis'
 	implementation 'org.springframework.boot:spring-boot-starter-validation'
-	implementation 'org.springframework.boot:spring-boot-starter-webflux'
 	compileOnly 'org.projectlombok:lombok'
 	runtimeOnly 'com.mysql:mysql-connector-j'
+	testRuntimeOnly 'com.h2database:h2'
 	annotationProcessor 'org.projectlombok:lombok'
 	testImplementation 'org.springframework.boot:spring-boot-starter-test'
 	testRuntimeOnly 'org.junit.platform:junit-platform-launcher'

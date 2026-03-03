@@ -1,24 +1,25 @@
 package com.ktb.community.chat.handler;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.ktb.community.chat.dto.ChatMessagePubSubDto;
 import com.ktb.community.chat.dto.ChatMessageReqDto;
 import com.ktb.community.chat.mapper.DtoMapper;
 import com.ktb.community.chat.service.ChatServiceImpl;
 import com.ktb.community.chat.service.RedisPubSubService;
 import com.ktb.community.chat.service.SessionRegistry;
 import org.springframework.stereotype.Component;
-import org.springframework.web.reactive.socket.WebSocketHandler;
-import org.springframework.web.reactive.socket.WebSocketMessage;
-import org.springframework.web.reactive.socket.WebSocketSession;
-import reactor.core.publisher.Mono;
+import org.springframework.web.socket.CloseStatus;
+import org.springframework.web.socket.TextMessage;
+import org.springframework.web.socket.WebSocketSession;
+import org.springframework.web.socket.handler.TextWebSocketHandler;
 
 import java.util.Map;
 
 /**
- * WebFlux WebSocket 핸들러: subscribe/unsubscribe/chat 메시지를 처리한다.
+ * MVC WebSocket 핸들러: subscribe/unsubscribe/chat 메시지를 처리한다.
  */
 @Component
-public class ChatWebSocketHandler implements WebSocketHandler {
+public class ChatWebSocketHandler extends TextWebSocketHandler {
 
     private final SessionRegistry sessionRegistry;
     private final RedisPubSubService redisPubSubService;
@@ -37,28 +38,29 @@ public class ChatWebSocketHandler implements WebSocketHandler {
     }
 
     @Override
-    public Mono<Void> handle(WebSocketSession session) {
-        // 세션 등록 및 outbound flux 준비
-        var connection = sessionRegistry.registerSession(session.getId());
-        // 세션 등록/송신 스트림(outbound)
-        Mono<Void> outbound = session.send(
-                connection.getSink().asFlux().map(session::textMessage)
-                        .doFinally(signalType -> sessionRegistry.removeSession(session.getId()))
-        );
-
-        // 수신 스트림(inbound)
-        Mono<Void> inbound = session.receive()
-                .map(WebSocketMessage::getPayloadAsText)
-                .flatMap(payload -> handleInbound(session.getId(), payload))
-                .doFinally(signalType -> sessionRegistry.removeSession(session.getId()))
-                .then();
-
-
-        // WebSocket 연결 종료 시점을 정의하는 코드
-        return Mono.firstWithSignal(outbound, inbound);
+    public void afterConnectionEstablished(WebSocketSession session) {
+        sessionRegistry.registerSession(session);
     }
 
-    private Mono<Void> handleInbound(String sessionId, String payload) {
+    @Override
+    protected void handleTextMessage(WebSocketSession session, TextMessage message) {
+        handleInbound(session.getId(), message.getPayload());
+    }
+
+    @Override
+    public void afterConnectionClosed(WebSocketSession session, CloseStatus status) {
+        sessionRegistry.removeSession(session.getId());
+    }
+
+    @Override
+    public void handleTransportError(WebSocketSession session, Throwable exception) throws Exception {
+        sessionRegistry.removeSession(session.getId());
+        if (session.isOpen()) {
+            session.close(CloseStatus.SERVER_ERROR);
+        }
+    }
+
+    private void handleInbound(String sessionId, String payload) {
         try {
             Map<?, ?> map = objectMapper.readValue(payload, Map.class);
             String type = (String) map.get("type");
@@ -66,9 +68,15 @@ public class ChatWebSocketHandler implements WebSocketHandler {
 
             if ("subscribe".equalsIgnoreCase(type) && roomId != null) {
                 sessionRegistry.subscribe(sessionId, roomId);
-            } else if ("unsubscribe".equalsIgnoreCase(type) && roomId != null) {
+                return;
+            }
+
+            if ("unsubscribe".equalsIgnoreCase(type) && roomId != null) {
                 sessionRegistry.unsubscribe(sessionId, roomId);
-            } else if ("chat".equalsIgnoreCase(type)) {
+                return;
+            }
+
+            if ("chat".equalsIgnoreCase(type)) {
                 ChatMessageReqDto req = ChatMessageReqDto.builder()
                         .roomId(roomId)
                         .senderId(asLong(map.get("senderId")))
@@ -76,19 +84,21 @@ public class ChatWebSocketHandler implements WebSocketHandler {
                         .build();
 
                 if (req.getRoomId() == null || req.getSenderId() == null || req.getMessage() == null) {
-                    return Mono.empty();
+                    return;
                 }
 
-                // 메시지 저장 -> pubsub DTO 변환 -> JSON 직렬화 -> Redis publish
-                return chatService.saveMessage(req.getRoomId(), req)
-                        .then(dtoMapper.toPubSubDto(req))
-                        .flatMap(dto -> Mono.fromCallable(() -> objectMapper.writeValueAsString(dto)))
-                        .flatMap(message -> redisPubSubService.publish("chat", message).then());
+                chatService.saveMessage(req.getRoomId(), req).block();
+                ChatMessagePubSubDto dto = dtoMapper.toPubSubDto(req).block();
+                if (dto == null) {
+                    return;
+                }
+
+                String pubSubMessage = objectMapper.writeValueAsString(dto);
+                redisPubSubService.publish("chat", pubSubMessage);
             }
         } catch (Exception e) {
             // ignore malformed payload
         }
-        return Mono.empty();
     }
 
     private Long asLong(Object value) {

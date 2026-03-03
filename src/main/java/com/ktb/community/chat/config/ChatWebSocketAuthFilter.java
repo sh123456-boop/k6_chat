@@ -2,22 +2,21 @@ package com.ktb.community.chat.config;
 
 import com.ktb.community.chat.service.ChatServiceImpl;
 import com.ktb.community.util.JWTUtil;
-import org.springframework.http.HttpStatus;
-import org.springframework.http.MediaType;
-import org.springframework.stereotype.Component;
-import org.springframework.web.server.ServerWebExchange;
-import org.springframework.web.server.WebFilter;
-import org.springframework.web.server.WebFilterChain;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import reactor.core.publisher.Mono;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.server.ServerHttpRequest;
+import org.springframework.http.server.ServerHttpResponse;
+import org.springframework.stereotype.Component;
+import org.springframework.web.util.UriComponentsBuilder;
+import org.springframework.web.socket.WebSocketHandler;
+import org.springframework.web.socket.server.HandshakeInterceptor;
 
-import java.nio.charset.StandardCharsets;
+import java.util.Map;
 
 @Component
-public class ChatWebSocketAuthFilter implements WebFilter {
+public class ChatWebSocketAuthFilter implements HandshakeInterceptor {
 
-    private static final String CHAT_CONNECT_PATH = "/v1/chat/connect";
     private static final Logger log = LoggerFactory.getLogger(ChatWebSocketAuthFilter.class);
 
     private final JWTUtil jwtUtil;
@@ -29,66 +28,67 @@ public class ChatWebSocketAuthFilter implements WebFilter {
     }
 
     @Override
-    public Mono<Void> filter(ServerWebExchange exchange, WebFilterChain chain) {
-        String path = exchange.getRequest().getURI().getPath();
-        // 쿼리 파라미터 포함한 변형 경로도 허용 (/v1/chat/connect, /v1/chat/connect/, etc)
-        if (!path.startsWith(CHAT_CONNECT_PATH)) {
-            return chain.filter(exchange);
-        }
-        log.debug("WebSocket auth filter hit: {}", path);
+    public boolean beforeHandshake(ServerHttpRequest request,
+                                   ServerHttpResponse response,
+                                   WebSocketHandler wsHandler,
+                                   Map<String, Object> attributes) {
+        String path = request.getURI().getPath();
+        log.debug("WebSocket auth interceptor hit: {}", path);
 
-        // WebSocket 브라우저는 커스텀 헤더를 보낼 수 없으므로 쿼리파라미터(access, roomId)만 확인한다.
-        String accessToken = exchange.getRequest().getQueryParams().getFirst("access");
-        String roomIdParam = exchange.getRequest().getQueryParams().getFirst("roomId");
-        if (accessToken == null) {
-            return unauthorized(exchange, "missing access token");
+        String access = UriComponentsBuilder.fromUri(request.getURI()).build().getQueryParams().getFirst("access");
+        String roomIdParam = UriComponentsBuilder.fromUri(request.getURI()).build().getQueryParams().getFirst("roomId");
+
+        if (access == null) {
+            return unauthorized(response, "missing access token");
         }
         if (roomIdParam == null) {
-            return unauthorized(exchange, "missing roomId");
+            return unauthorized(response, "missing roomId");
         }
 
         Long userId;
         Long roomId;
 
         try {
-            // JWT 만료 체크 (동기)
-            if (jwtUtil.isExpired(accessToken)) {
-                return unauthorized(exchange, "access token expired");
+            if (jwtUtil.isExpired(access)) {
+                return unauthorized(response, "access token expired");
             }
 
-            // JWT 에서 userId 추출 (동기)
-            userId = jwtUtil.getID(accessToken);
-
-            // roomId 파싱 (동기)
+            userId = jwtUtil.getID(access);
             roomId = Long.parseLong(roomIdParam);
         } catch (Exception e) {
-            // 토큰 파싱 실패, roomId 파싱 실패 등
-            return unauthorized(exchange, "invalid token");
+            return unauthorized(response, "invalid token");
         }
 
-        // 여기부터는 DB i/o 포함이므로 Mono 체인 사용
-        return chatService.isRoomParticipant(userId, roomId)
-                .flatMap(isParticipant -> isParticipant
-                        ? chain.filter(exchange)
-                        : forbidden(exchange, "access denied for room userId=" + userId + " roomId=" + roomId))
-                .onErrorResume(e -> unauthorized(exchange, "invalid token"));
+        try {
+            boolean isParticipant = Boolean.TRUE.equals(chatService.isRoomParticipant(userId, roomId).block());
+            if (!isParticipant) {
+                return forbidden(response, "access denied for room userId=" + userId + " roomId=" + roomId);
+            }
+        } catch (Exception e) {
+            return unauthorized(response, "invalid token");
+        }
+
+        attributes.put("userId", userId);
+        attributes.put("roomId", roomId);
+        return true;
     }
 
-    private Mono<Void> unauthorized(ServerWebExchange exchange, String message) {
+    @Override
+    public void afterHandshake(ServerHttpRequest request,
+                               ServerHttpResponse response,
+                               WebSocketHandler wsHandler,
+                               Exception exception) {
+    }
+
+    private boolean unauthorized(ServerHttpResponse response, String message) {
         log.warn("WebSocket auth unauthorized: {}", message);
-        var response = exchange.getResponse();
         response.setStatusCode(HttpStatus.UNAUTHORIZED);
-        response.getHeaders().setContentType(MediaType.TEXT_PLAIN);
-        var buffer = response.bufferFactory().wrap(message.getBytes(StandardCharsets.UTF_8));
-        return response.writeWith(Mono.just(buffer));
+        return false;
     }
 
-    private Mono<Void> forbidden(ServerWebExchange exchange, String message) {
+    private boolean forbidden(ServerHttpResponse response, String message) {
         log.warn("WebSocket auth forbidden: {}", message);
-        var response = exchange.getResponse();
         response.setStatusCode(HttpStatus.FORBIDDEN);
-        response.getHeaders().setContentType(MediaType.TEXT_PLAIN);
-        var buffer = response.bufferFactory().wrap(message.getBytes(StandardCharsets.UTF_8));
-        return response.writeWith(Mono.just(buffer));
+        return false;
     }
 }
