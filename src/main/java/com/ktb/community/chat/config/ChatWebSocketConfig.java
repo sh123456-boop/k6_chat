@@ -1,7 +1,6 @@
 package com.ktb.community.chat.config;
 
 import com.ktb.community.chat.handler.ChatWebSocketHandler;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.web.cors.CorsConfiguration;
@@ -22,9 +21,6 @@ import java.util.Map;
 @EnableWebFlux
 public class ChatWebSocketConfig {
 
-    @Value("${spring.route.front}")
-    private String front;
-
     /**
      * 매핑: /v1/chat/connect -> ChatWebSocketHandler
      */
@@ -37,10 +33,9 @@ public class ChatWebSocketConfig {
         mapping.setOrder(-1);
         mapping.setUrlMap(map);
 
-        // ✅ /v1/chat/connect 에 대한 CORS 설정
         CorsConfiguration cors = new CorsConfiguration();
-        cors.setAllowedOrigins(List.of(front));
-        cors.setAllowedMethods(List.of("GET", "POST", "OPTIONS"));
+        cors.setAllowedOriginPatterns(List.of("*"));
+        cors.setAllowedMethods(List.of("*"));
         cors.setAllowedHeaders(List.of("*"));
         cors.setAllowCredentials(true);
 
