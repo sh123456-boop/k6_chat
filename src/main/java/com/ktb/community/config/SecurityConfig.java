@@ -1,35 +1,21 @@
 package com.ktb.community.config;
 
-//import com.ktb.community.chat.config.ChatWebSocketAuthFilter;
-import com.ktb.community.chat.config.ChatWebSocketAuthFilter;
-import com.ktb.community.util.JWTFilter;
-import com.ktb.community.util.JWTUtil;
 import lombok.RequiredArgsConstructor;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.config.annotation.web.reactive.EnableWebFluxSecurity;
-import org.springframework.security.config.web.server.SecurityWebFiltersOrder;
 import org.springframework.security.config.web.server.ServerHttpSecurity;
 import org.springframework.security.web.server.SecurityWebFilterChain;
-import org.springframework.security.web.server.context.NoOpServerSecurityContextRepository;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.reactive.CorsConfigurationSource;
 import org.springframework.web.cors.reactive.UrlBasedCorsConfigurationSource;
 
-import java.util.Arrays;
-import java.util.Collections;
+import java.util.List;
 
 @Configuration
 @EnableWebFluxSecurity
 @RequiredArgsConstructor
 public class SecurityConfig {
-
-    private final JWTUtil jwtUtil;
-    private final ChatWebSocketAuthFilter chatWebSocketAuthFilter;
-
-    @Value("${spring.route.front}")
-    String front;
 
     @Bean
     public SecurityWebFilterChain securityWebFilterChain(ServerHttpSecurity http) {
@@ -39,26 +25,18 @@ public class SecurityConfig {
                 .csrf(ServerHttpSecurity.CsrfSpec::disable)
                 .formLogin(ServerHttpSecurity.FormLoginSpec::disable)
                 .httpBasic(ServerHttpSecurity.HttpBasicSpec::disable)
-                .authorizeExchange(auth -> auth
-                        .pathMatchers("/v1/healthz", "/v1/chat/connect/**").permitAll()
-                        .pathMatchers("/v1/admin/**").hasRole("ADMIN")
-                        .anyExchange().authenticated())
-                // WebSocket 핸드셰이크에서 채팅 권한/토큰 검증
-                .addFilterBefore(chatWebSocketAuthFilter, SecurityWebFiltersOrder.AUTHENTICATION)
-                // JWT는 인증 필터보다 먼저 실행되어 토큰을 검증한다
-                .addFilterBefore(new JWTFilter(jwtUtil), SecurityWebFiltersOrder.AUTHENTICATION)
-                .securityContextRepository(NoOpServerSecurityContextRepository.getInstance())
+                .authorizeExchange(auth -> auth.anyExchange().permitAll())
                 .build();
     }
 
     private CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration configuration = new CorsConfiguration();
-        configuration.setAllowedOrigins(Collections.singletonList(front));
-        configuration.setAllowedMethods(Collections.singletonList("*"));
+        configuration.setAllowedOriginPatterns(List.of("*"));
+        configuration.setAllowedMethods(List.of("*"));
         configuration.setAllowCredentials(true);
-        configuration.setAllowedHeaders(Collections.singletonList("*"));
+        configuration.setAllowedHeaders(List.of("*"));
         configuration.setMaxAge(3600L);
-        configuration.setExposedHeaders(Collections.singletonList("access"));
+        configuration.setExposedHeaders(List.of("*"));
 
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
         source.registerCorsConfiguration("/**", configuration);
