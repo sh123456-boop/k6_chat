@@ -25,14 +25,6 @@ repositories {
 }
 
 dependencies {
-    // spring security
-	implementation 'org.springframework.boot:spring-boot-starter-security'
-
-    // jwt 토큰 관련
-	implementation 'io.jsonwebtoken:jjwt-api:0.12.3'
-	implementation 'io.jsonwebtoken:jjwt-impl:0.12.3'
-	implementation 'io.jsonwebtoken:jjwt-jackson:0.12.3'
-
     // flyway 관련 의존성
     implementation 'org.flywaydb:flyway-core:10.17.0'
     implementation 'org.flywaydb:flyway-mysql:10.17.0'
