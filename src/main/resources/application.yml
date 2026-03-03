@@ -1,4 +1,10 @@
 spring:
+  datasource:
+    url: ${DB_URL}
+    username: ${DB_USERNAME}
+    password: ${DB_PASSWORD}
+    driver-class-name: com.mysql.cj.jdbc.Driver
+
   jpa:
     hibernate:
       ddl-auto: validate   # 개발 중에는 create / create-drop / update 중 선택
@@ -14,12 +20,20 @@ spring:
     validate-on-migrate: true # migrate 전에 검증(validate) 수행.
     clean-disabled: true # flyway clean(스키마의 모든 객체 드롭)을 금지. 운영/스테이징은 무조건 true 권장.
 
+  data:
+    redis:
+      host: ${REDIS_HOST}
+      port: 6379
+
 logging:
   level:
     org.hibernate.SQL: debug
-    org.springframework.security: TRACE
 
 server:
   port: 8081
+
+llm:
+  gemini:
+    key: ${LLM_KEY}
 
 spring.profiles.default: dev
